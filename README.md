@@ -53,20 +53,29 @@ viewer. Options:
 --cpus <n>        Virtual CPUs                 (default: 1)
 --memory <mib>    Memory in MiB                (default: 512)
 --password <str>  Require this password to connect (optional)
---web-url <url>   Base URL of the hosted web app   (default: http://localhost:5173)
+--web-url <url>   Base URL of the hosted web app
+                  (default: https://beamhop.github.io/use-my-shell)
 ```
+
+The CLI prints a shareable link pointing at the hosted SPA. Use `--web-url` to
+point at a local dev server (`--web-url http://localhost:5173`) or your own
+deployment.
 
 With `--password`, viewers must supply the same value to connect. The password
 is **not** placed in the URL — share it out of band; the browser prompts for it.
 
 ### View a shared shell
 
+The CLI prints a link to the deployed SPA — open it in a browser. To run the
+SPA locally instead:
+
 ```sh
-bun run dev:web
+bun run dev:web      # then run the CLI with --web-url http://localhost:5173
 ```
 
-Open the URL the CLI printed (`http://localhost:5173/?r=<room-code>`). Build a
-static bundle for hosting with `bun run build` (output in `apps/web/dist`).
+Build a static bundle with `bun run build` (output in `apps/web/dist`). The
+SPA auto-deploys to GitHub Pages on push to `main` via
+`.github/workflows/deploy-pages.yml`.
 
 ## How it works
 
