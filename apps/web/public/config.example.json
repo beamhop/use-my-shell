@@ -1,0 +1,7 @@
+{
+  "_comment": "Runtime config fetched by the SPA at startup. Copy to config.json and fill in. To use STUN only, set turn to null.",
+  "turn": {
+    "username": "",
+    "credential": ""
+  }
+}

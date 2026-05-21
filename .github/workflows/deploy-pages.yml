@@ -1,0 +1,67 @@
+name: Deploy SPA to GitHub Pages
+
+# Builds apps/web and publishes it to GitHub Pages.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow one concurrent deployment; newer pushes cancel in-progress runs.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Write runtime config.json
+        # config.json is git-ignored (holds deploy-specific TURN credentials).
+        # CI writes it from repo variables. If TURN_USERNAME is unset the app
+        # falls back to STUN only — still functional.
+        run: |
+          if [ -n "${{ vars.TURN_USERNAME }}" ]; then
+            cat > apps/web/public/config.json <<EOF
+          {
+            "turn": {
+              "username": "${{ vars.TURN_USERNAME }}",
+              "credential": "${{ vars.TURN_CREDENTIAL }}"
+            }
+          }
+          EOF
+          else
+            echo '{ "turn": null }' > apps/web/public/config.json
+          fi
+
+      - name: Build SPA
+        run: bun run --filter @use-my-shell/web build
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/web/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

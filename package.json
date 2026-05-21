@@ -1,0 +1,19 @@
+{
+  "name": "use-my-shell",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:cli": "bun --filter @use-my-shell/cli dev",
+    "dev:web": "bun --filter @use-my-shell/web dev",
+    "build": "bun --filter @use-my-shell/web build",
+    "typecheck": "bun --filter '*' typecheck"
+  },
+  "engines": {
+    "bun": ">=1.2.0"
+  }
+}

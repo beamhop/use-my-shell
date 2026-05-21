@@ -1,0 +1,12 @@
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+# Runtime SPA config holding deploy-specific credentials; example is tracked.
+apps/web/public/config.json
+.DS_Store
+*.log
+.microsandbox/

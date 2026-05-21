@@ -1,0 +1,6 @@
+# Bun workspace configuration
+# Workspaces are declared in package.json; this file holds runtime/install tweaks.
+
+[install]
+# Hoist dependencies so native addons (microsandbox NAPI) resolve predictably.
+linker = "hoisted"

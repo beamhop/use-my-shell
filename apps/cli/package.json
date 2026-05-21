@@ -1,0 +1,24 @@
+{
+  "name": "@use-my-shell/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "use-my-shell": "./src/index.ts"
+  },
+  "scripts": {
+    "dev": "bun run src/index.ts",
+    "start": "bun run src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@use-my-shell/protocol": "workspace:*",
+    "microsandbox": "^0.4.6",
+    "trystero": "^0.24.0",
+    "werift": "^0.23.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.0",
+    "typescript": "^5.7.0"
+  }
+}
