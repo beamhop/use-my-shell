@@ -134,11 +134,14 @@ on a UDP-capable host and point the endpoint hosts in `buildIceServers` at it.
 
 ## Known limitations
 
-- **Terminal resize.** microsandbox's SDK exposes no PTY winsize ioctl. On a
-  browser resize the host re-issues `stty cols/rows` inside the shell — this
-  updates the terminal driver for line-based programs, but does not deliver a
-  real `SIGWINCH`, so full-screen TUI apps (vim, htop) may not reflow until
-  refreshed. The browser terminal is locked to the host-advertised size.
+- **Terminal resize.** microsandbox's SDK exposes no PTY winsize ioctl. The
+  host works around this with a one-shot exec in the same VM that runs `stty`
+  on the guest PTY and sends `SIGWINCH` to the shell's process group, so
+  full-screen TUI apps (vim, htop, opencode) re-layout on resize. The browser
+  also reports its size in the join handshake, so the shell starts at the
+  right dimensions. Resize is delivered as a signal, not a true winsize
+  ioctl — a few apps that only read the size via `ioctl` may still need a
+  manual refresh.
 - **NAT traversal.** WebRTC uses STUN by default — fine for most networks,
   but strict/symmetric NATs or corporate firewalls may fail to connect
   directly. Configure a **TURN relay** to cover those cases (see below).

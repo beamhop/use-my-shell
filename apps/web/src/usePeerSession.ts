@@ -45,6 +45,12 @@ export interface PeerSession {
   sendInput: (data: Uint8Array) => void;
   /** Send a terminal-resize event to the host. */
   sendResize: (msg: ResizeMessage) => void;
+  /**
+   * Report the terminal's current size without sending it. The size is
+   * remembered and included in the `hello` handshake, so the host can size
+   * the guest PTY before the shell renders.
+   */
+  reportSize: (msg: ResizeMessage) => void;
   /** Register a sink for incoming PTY output bytes. */
   onOutput: (fn: (data: Uint8Array) => void) => void;
   /** Retry with a password (from the `password-required` state). */
@@ -74,6 +80,8 @@ export function usePeerSession(
   const connRef = useRef<Connection | null>(null);
   const outputSinkRef = useRef<((data: Uint8Array) => void) | null>(null);
   const passwordRef = useRef<string | undefined>(undefined);
+  /** Latest terminal size, reported by the terminal as it lays out. */
+  const sizeRef = useRef<ResizeMessage | null>(null);
 
   useEffect(() => {
     if (!roomCode) {
@@ -124,8 +132,19 @@ export function usePeerSession(
     }, HOST_TIMEOUT_MS);
 
     room.onPeerJoin((peerId) => {
-      // The host appeared — announce ourselves.
-      void sendHello({ protocolVersion: PROTOCOL_VERSION }, peerId);
+      // The host appeared — announce ourselves, including our terminal
+      // size so the host can size the guest PTY before the shell renders.
+      // 0/0 means the terminal has not laid out yet; the `onReady` handler
+      // below sends a real resize once it has.
+      const size = sizeRef.current;
+      void sendHello(
+        {
+          protocolVersion: PROTOCOL_VERSION,
+          cols: size?.cols ?? 0,
+          rows: size?.rows ?? 0,
+        },
+        peerId,
+      );
     });
 
     onReady((msg) => {
@@ -134,6 +153,11 @@ export function usePeerSession(
       setReady(msg);
       setStatus("connected");
       setDetail(null);
+      // Re-assert our size now the session is live. The `hello` may have
+      // raced ahead of the terminal's first layout; this guarantees the
+      // guest PTY ends up at the real size even then.
+      const size = sizeRef.current;
+      if (size) void connRef.current?.sendResize(size).catch(() => {});
     });
 
     onOutput((data) => {
@@ -167,7 +191,12 @@ export function usePeerSession(
   }, []);
 
   const sendResize = useCallback((msg: ResizeMessage) => {
+    sizeRef.current = msg;
     void connRef.current?.sendResize(msg).catch(() => {});
+  }, []);
+
+  const reportSize = useCallback((msg: ResizeMessage) => {
+    sizeRef.current = msg;
   }, []);
 
   const onOutput = useCallback((fn: (data: Uint8Array) => void) => {
@@ -189,6 +218,7 @@ export function usePeerSession(
     detail,
     sendInput,
     sendResize,
+    reportSize,
     onOutput,
     submitPassword,
     reconnect,

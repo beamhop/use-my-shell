@@ -63,9 +63,24 @@ export type ResizeMessage = {
   [key: string]: JsonValue;
 };
 
-/** browser -> host. Sent once the browser sees the host peer. */
+/**
+ * browser -> host. Sent once the browser sees the host peer.
+ *
+ * Carries the browser terminal's current size so the host can size the guest
+ * PTY correctly before the shell renders — without this the guest would start
+ * at a hardcoded default and full-screen apps would launch at the wrong size.
+ *
+ * `cols`/`rows` are `0` when the browser does not yet know its terminal size
+ * at hello time; the host treats a zero dimension as "no size reported". They
+ * are kept required (not optional) so the type stays a plain JSON record and
+ * satisfies trystero's `DataPayload` constraint.
+ */
 export type HelloMessage = {
   protocolVersion: number;
+  /** Browser terminal width in cells, or 0 if unknown at hello time. */
+  cols: number;
+  /** Browser terminal height in cells, or 0 if unknown at hello time. */
+  rows: number;
   [key: string]: JsonValue;
 };
 
@@ -121,7 +136,12 @@ export function isResizeMessage(value: unknown): value is ResizeMessage {
 }
 
 export function isHelloMessage(value: unknown): value is HelloMessage {
-  return isRecord(value) && isFiniteNumber(value.protocolVersion);
+  return (
+    isRecord(value) &&
+    isFiniteNumber(value.protocolVersion) &&
+    isFiniteNumber(value.cols) &&
+    isFiniteNumber(value.rows)
+  );
 }
 
 export function isReadyMessage(value: unknown): value is ReadyMessage {

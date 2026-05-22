@@ -52,7 +52,8 @@ const SCROLLBACK_LIMIT_BYTES = 256 * 1024;
  * Host -> browser: PTY `stdout` events become `output` messages, broadcast
  *                  to every connected viewer.
  * Browser -> host: `input` messages from any viewer are written to the PTY
- *                  stdin; `resize` messages re-issue `stty` to the PTY.
+ *                  stdin; `resize` messages drive `shell.resize()`, which
+ *                  resizes the guest PTY out-of-band of the keystroke stream.
  */
 export function runSession(
   shell: ShellSession,
@@ -98,18 +99,28 @@ export function runSession(
     });
   });
 
+  // The guest PTY's current size. Starts at the configured default and
+  // tracks the last applied resize. With multiple viewers the PTY has a
+  // single size — the most recent resize from any viewer wins.
+  let curCols = config.cols;
+  let curRows = config.rows;
+
+  // Apply a size to the guest PTY, but only when it actually changed —
+  // each resize spawns a one-shot exec in the VM, so dropping no-ops
+  // matters (the browser sends a resize on every connect).
+  const applySize = (cols: number, rows: number): void => {
+    const c = Math.max(1, Math.floor(cols));
+    const r = Math.max(1, Math.floor(rows));
+    if (c === curCols && r === curRows) return;
+    curCols = c;
+    curRows = r;
+    void shell.resize(c, r);
+  };
+
   // --- Browser -> host: resize -----------------------------------------
-  // microsandbox exposes no PTY winsize API, so we re-issue `stty` inside
-  // the shell. This updates the terminal driver for line-based programs;
-  // full-screen TUI apps may not repaint until refreshed. With multiple
-  // viewers the PTY has a single size — the most recent resize wins.
   peer.onResize((msg, peerId) => {
     if (stopped || !viewers.has(peerId) || !isResizeMessage(msg)) return;
-    const cols = Math.max(1, Math.floor(msg.cols));
-    const rows = Math.max(1, Math.floor(msg.rows));
-    void shell.stdin
-      .write(`stty cols ${cols} rows ${rows}\n`)
-      .catch(() => {});
+    applySize(msg.cols, msg.rows);
   });
 
   // --- Handshake: every valid peer becomes a viewer --------------------
@@ -120,6 +131,15 @@ export function runSession(
       log.warn(`Rejecting peer ${peerId}: protocol mismatch.`);
       peer.sendBye({ reason: "Incompatible protocol version." }, peerId);
       return;
+    }
+
+    // Size the guest PTY from the joiner's reported terminal size before
+    // sending `ready`, so the shell (and anything it launches) sees the
+    // real dimensions instead of the hardcoded default. A zero dimension
+    // means the browser had not laid out yet — it follows up with a
+    // `resize` once it has.
+    if (msg.cols > 0 && msg.rows > 0) {
+      applySize(msg.cols, msg.rows);
     }
 
     // Replay the scrollback *before* adding the peer to `viewers`. Sends on
@@ -135,8 +155,8 @@ export function runSession(
 
     const ready: ReadyMessage = {
       protocolVersion: PROTOCOL_VERSION,
-      cols: config.cols,
-      rows: config.rows,
+      cols: curCols,
+      rows: curRows,
       shell: config.shell,
       image: config.image,
     };

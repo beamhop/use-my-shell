@@ -43,6 +43,9 @@ export function TerminalView({ session }: TerminalViewProps): React.ReactElement
         session.sendInput(encoder.encode(data));
       }}
       onResize={(nextCols, nextRows) => {
+        // Record the size synchronously so it is available for the `hello`
+        // handshake even before the (debounced) resize message is sent.
+        session.reportSize({ cols: nextCols, rows: nextRows });
         if (resizeTimer.current !== null) {
           window.clearTimeout(resizeTimer.current);
         }

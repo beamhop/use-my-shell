@@ -28,8 +28,44 @@ export interface ShellSession {
   sandbox: Sandbox;
   /** Async-iterable stream of PTY events (`stdout` / `exited`). */
   handle: ExecHandle;
-  /** Writable stdin of the PTY — keystrokes and `stty` resize commands. */
+  /** Writable stdin of the PTY — keystrokes flow in here. */
   stdin: ExecSink;
+  /**
+   * Resize the interactive shell's PTY.
+   *
+   * microsandbox has no PTY winsize API, so this runs a *separate* one-shot
+   * exec inside the same VM (not the interactive PTY's stdin). The helper
+   * locates the interactive shell's terminal device, applies the new size
+   * with `stty`, and sends `SIGWINCH` to the shell's process group so the
+   * foreground program (a shell, vim, opencode, …) re-layouts.
+   *
+   * Best-effort: a failure is logged and swallowed — a missed resize must
+   * never tear the session down.
+   */
+  resize: (cols: number, rows: number) => Promise<void>;
+}
+
+/**
+ * Build the POSIX-sh script run inside the guest to resize the shell.
+ *
+ * microsandbox allocates exactly one interactive PTY for our `sh -l -i`,
+ * so the guest has a single `/dev/pts/*` device. The script:
+ *   1. applies the new size to every pts device with `stty` (updates the
+ *      kernel line discipline — what `tput cols` and friends report);
+ *   2. sends `SIGWINCH` to every process so the foreground program (a
+ *      bare shell, vim, opencode, …) re-queries the size and re-layouts.
+ *
+ * `cols`/`rows` are interpolated by the host as already-validated
+ * integers, so there is no shell-injection surface here.
+ */
+function buildResizeScript(cols: number, rows: number): string {
+  return [
+    `for p in /dev/pts/*; do`,
+    `  stty -F "$p" rows ${rows} cols ${cols} 2>/dev/null || true`,
+    `done`,
+    // SIGWINCH to all processes; harmless to any that don't handle it.
+    `kill -WINCH -1 2>/dev/null || true`,
+  ].join("\n");
 }
 
 /**
@@ -122,7 +158,20 @@ export async function bootSandbox(opts: SandboxOptions): Promise<ShellSession> {
     throw new Error("microsandbox did not provide a writable stdin for the PTY.");
   }
 
-  return { sandbox, handle, stdin };
+  // Resize runs as a one-shot exec in the same VM, independent of the
+  // interactive PTY — so the `stty`/`kill` commands never land in the
+  // foreground program's stdin as stray keystrokes.
+  const resize = async (cols: number, rows: number): Promise<void> => {
+    const c = Math.max(1, Math.floor(cols));
+    const r = Math.max(1, Math.floor(rows));
+    try {
+      await sandbox.shell(buildResizeScript(c, r));
+    } catch (err) {
+      log.warn(`Failed to resize the guest PTY: ${String(err)}`);
+    }
+  };
+
+  return { sandbox, handle, stdin, resize };
 }
 
 /** Race a promise against a timeout; resolves either way, never rejects. */
