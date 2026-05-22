@@ -142,8 +142,9 @@ on a UDP-capable host and point the endpoint hosts in `buildIceServers` at it.
 - **NAT traversal.** WebRTC uses STUN by default — fine for most networks,
   but strict/symmetric NATs or corporate firewalls may fail to connect
   directly. Configure a **TURN relay** to cover those cases (see below).
-- **Single viewer.** The first browser to complete a valid handshake owns the
-  session; later joiners are rejected.
+- **Shared shell.** Every browser that completes a valid handshake joins the
+  same shell. PTY output is broadcast to all viewers, and keystrokes from any
+  viewer go to the one underlying shell — all connected viewers share control.
 - **Security.** The room code is discoverable on the public Nostr signaling
   network. Anyone with the code (and password, if set) can use the shell — but
   it is a disposable microVM, not your host. Use `--password` for anything
