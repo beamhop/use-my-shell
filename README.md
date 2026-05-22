@@ -52,6 +52,7 @@ viewer. Options:
 --shell <path>    Shell to run in the sandbox  (default: /bin/sh)
 --cpus <n>        Virtual CPUs                 (default: 1)
 --memory <mib>    Memory in MiB                (default: 512)
+--size <WxH>      Fixed terminal grid size     (default: 100x30)
 --password <str>  Require this password to connect (optional)
 --web-url <url>   Base URL of the hosted web app
                   (default: https://beamhop.github.io/use-my-shell)
@@ -134,14 +135,12 @@ on a UDP-capable host and point the endpoint hosts in `buildIceServers` at it.
 
 ## Known limitations
 
-- **Terminal resize.** microsandbox's SDK exposes no PTY winsize ioctl. The
-  host works around this with a one-shot exec in the same VM that runs `stty`
-  on the guest PTY and sends `SIGWINCH` to the shell's process group, so
-  full-screen TUI apps (vim, htop, opencode) re-layout on resize. The browser
-  also reports its size in the join handshake, so the shell starts at the
-  right dimensions. Resize is delivered as a signal, not a true winsize
-  ioctl — a few apps that only read the size via `ioctl` may still need a
-  manual refresh.
+- **Fixed terminal size.** The PTY is a fixed grid size, set by the host with
+  `--size <WxH>` (default `100x30`) and never changed. A TUI process can only
+  render at one size at a time, so with multiple viewers the host picks the
+  size and each browser scales its rendering to fit its own window (a phone
+  sees smaller text, never a broken layout). This is the same trade-off VS
+  Code Live Share makes for shared terminals.
 - **NAT traversal.** WebRTC uses STUN by default — fine for most networks,
   but strict/symmetric NATs or corporate firewalls may fail to connect
   directly. Configure a **TURN relay** to cover those cases (see below).

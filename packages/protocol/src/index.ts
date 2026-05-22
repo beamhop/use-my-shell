@@ -21,7 +21,11 @@ export const ACTIONS = Object.freeze({
   output: "out",
   /** browser -> host: raw keystroke bytes. */
   input: "in",
-  /** browser -> host: terminal size changed. */
+  /**
+   * browser -> host: terminal size changed. Retained for action-set parity
+   * between peers; the host ignores it — the PTY size is fixed by the host
+   * (see ReadyMessage) and viewers scale their rendering to fit instead.
+   */
   resize: "resize",
   /** browser -> host: handshake announcing the browser is present. */
   hello: "hello",
@@ -66,25 +70,28 @@ export type ResizeMessage = {
 /**
  * browser -> host. Sent once the browser sees the host peer.
  *
- * Carries the browser terminal's current size so the host can size the guest
- * PTY correctly before the shell renders — without this the guest would start
- * at a hardcoded default and full-screen apps would launch at the wrong size.
- *
- * `cols`/`rows` are `0` when the browser does not yet know its terminal size
- * at hello time; the host treats a zero dimension as "no size reported". They
- * are kept required (not optional) so the type stays a plain JSON record and
- * satisfies trystero's `DataPayload` constraint.
+ * `cols`/`rows` are advisory and currently unused by the host: the PTY size
+ * is fixed by the host (see ReadyMessage), so the browser sends `0/0`. The
+ * fields are kept (required, not optional) so the type stays a plain JSON
+ * record satisfying trystero's `DataPayload` constraint, and so a future
+ * change could re-introduce viewer-driven sizing without a wire break.
  */
 export type HelloMessage = {
   protocolVersion: number;
-  /** Browser terminal width in cells, or 0 if unknown at hello time. */
+  /** Advisory browser terminal width; the host ignores it (sent as 0). */
   cols: number;
-  /** Browser terminal height in cells, or 0 if unknown at hello time. */
+  /** Advisory browser terminal height; the host ignores it (sent as 0). */
   rows: number;
   [key: string]: JsonValue;
 };
 
-/** host -> browser. Sent after a valid hello; describes the live session. */
+/**
+ * host -> browser. Sent after a valid hello; describes the live session.
+ *
+ * `cols`/`rows` are the authoritative, fixed PTY size. Every viewer renders
+ * the terminal at exactly this grid and scales it to fit its own viewport —
+ * the size never changes for the life of the session.
+ */
 export type ReadyMessage = {
   protocolVersion: number;
   cols: number;

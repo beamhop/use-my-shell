@@ -15,16 +15,38 @@ import { makeRoomCode, makeShareUrl } from "./url.ts";
 import { color, log } from "./logger.ts";
 
 const DEFAULT_WEB_URL = "https://beamhop.github.io/use-my-shell";
-const DEFAULT_COLS = 80;
-const DEFAULT_ROWS = 24;
+/** Default fixed terminal grid; viewers scale their rendering to fit. */
+const DEFAULT_SIZE = "100x30";
 
 interface CliOptions {
   image: string;
   shell: string;
   cpus: number;
   memoryMiB: number;
+  /** Fixed terminal grid size — the PTY never resizes after boot. */
+  cols: number;
+  rows: number;
   password?: string;
   webUrl: string;
+}
+
+/**
+ * Parse a `<cols>x<rows>` size string. Bounds keep the grid usable: below
+ * 20x10 most TUIs break; the upper bound keeps a scaled-down grid legible.
+ */
+function parseSize(raw: string): { cols: number; rows: number } {
+  const m = /^(\d+)x(\d+)$/i.exec(raw.trim());
+  if (!m) {
+    log.error(`--size must be <cols>x<rows>, e.g. 100x30 (got "${raw}").`);
+    process.exit(1);
+  }
+  const cols = Number.parseInt(m[1]!, 10);
+  const rows = Number.parseInt(m[2]!, 10);
+  if (cols < 20 || cols > 300 || rows < 10 || rows > 100) {
+    log.error("--size out of range: cols 20–300, rows 10–100.");
+    process.exit(1);
+  }
+  return { cols, rows };
 }
 
 function printHelp(): void {
@@ -37,6 +59,7 @@ Options:
   --shell <path>      Shell to run in the sandbox  (default: /bin/sh)
   --cpus <n>          Virtual CPUs                 (default: 1)
   --memory <mib>      Memory in MiB                (default: 512)
+  --size <WxH>        Fixed terminal grid size     (default: ${DEFAULT_SIZE})
   --password <str>    Require this password to connect (optional)
   --web-url <url>     Base URL of the hosted web app   (default: ${DEFAULT_WEB_URL})
   -h, --help          Show this help
@@ -50,6 +73,7 @@ function parseCliOptions(): CliOptions {
       shell: { type: "string" },
       cpus: { type: "string" },
       memory: { type: "string" },
+      size: { type: "string" },
       password: { type: "string" },
       "web-url": { type: "string" },
       help: { type: "boolean", short: "h" },
@@ -74,11 +98,15 @@ function parseCliOptions(): CliOptions {
     process.exit(1);
   }
 
+  const { cols, rows } = parseSize(values.size ?? DEFAULT_SIZE);
+
   return {
     image: values.image ?? "alpine",
     shell: values.shell ?? "/bin/sh",
     cpus,
     memoryMiB,
+    cols,
+    rows,
     password: values.password,
     webUrl: values["web-url"] ?? DEFAULT_WEB_URL,
   };
@@ -162,6 +190,8 @@ async function main(): Promise<void> {
       shell: opts.shell,
       cpus: opts.cpus,
       memoryMiB: opts.memoryMiB,
+      cols: opts.cols,
+      rows: opts.rows,
     });
 
     peer = createHostPeer({ roomCode, password: opts.password });
@@ -171,8 +201,8 @@ async function main(): Promise<void> {
     });
 
     const session = runSession(shell, peer, {
-      cols: DEFAULT_COLS,
-      rows: DEFAULT_ROWS,
+      cols: opts.cols,
+      rows: opts.rows,
       shell: opts.shell,
       image: opts.image,
     });

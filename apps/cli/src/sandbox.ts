@@ -22,6 +22,9 @@ export interface SandboxOptions {
   cpus: number;
   /** Memory in MiB. */
   memoryMiB: number;
+  /** Fixed terminal grid applied to the PTY at boot; never changes after. */
+  cols: number;
+  rows: number;
 }
 
 export interface ShellSession {
@@ -170,6 +173,11 @@ export async function bootSandbox(opts: SandboxOptions): Promise<ShellSession> {
       log.warn(`Failed to resize the guest PTY: ${String(err)}`);
     }
   };
+
+  // Apply the fixed grid once, before the first byte of output — the PTY
+  // size is immutable for the life of the session, so viewers always see a
+  // consistent grid regardless of when they connect.
+  await resize(opts.cols, opts.rows);
 
   return { sandbox, handle, stdin, resize };
 }

@@ -3,9 +3,13 @@
  *
  * Multiple viewers are supported — every browser that completes a valid
  * handshake joins the same shared shell. PTY output is broadcast to all
- * connected viewers, and keystrokes/resizes from any viewer are forwarded
- * to the single underlying PTY. Anyone with the room code (and password)
- * gets concurrent control of the sandboxed shell.
+ * connected viewers, and keystrokes from any viewer are forwarded to the
+ * single underlying PTY. Anyone with the room code (and password) gets
+ * concurrent control of the sandboxed shell.
+ *
+ * The PTY size is fixed at boot and never changes: one TUI process can only
+ * render at one size, so the host picks the grid and every viewer scales its
+ * rendering to fit. Inbound `resize` messages are therefore ignored.
  *
  * A bounded scrollback buffer of recent PTY output is kept so that a viewer
  * joining mid-session is replayed what is already on screen, instead of
@@ -15,7 +19,6 @@
 import {
   PROTOCOL_VERSION,
   isHelloMessage,
-  isResizeMessage,
   type ReadyMessage,
 } from "@use-my-shell/protocol";
 import type { HostPeer } from "./peer.ts";
@@ -23,7 +26,7 @@ import type { ShellSession } from "./sandbox.ts";
 import { log } from "./logger.ts";
 
 export interface SessionConfig {
-  /** Initial terminal size advertised to the browser. */
+  /** Fixed terminal size — set at boot, advertised to every viewer, never changes. */
   cols: number;
   rows: number;
   /** Shell command running in the sandbox (for the ready handshake). */
@@ -52,8 +55,8 @@ const SCROLLBACK_LIMIT_BYTES = 256 * 1024;
  * Host -> browser: PTY `stdout` events become `output` messages, broadcast
  *                  to every connected viewer.
  * Browser -> host: `input` messages from any viewer are written to the PTY
- *                  stdin; `resize` messages drive `shell.resize()`, which
- *                  resizes the guest PTY out-of-band of the keystroke stream.
+ *                  stdin. `resize` messages are ignored — the PTY size is
+ *                  fixed (see the module comment).
  */
 export function runSession(
   shell: ShellSession,
@@ -99,29 +102,11 @@ export function runSession(
     });
   });
 
-  // The guest PTY's current size. Starts at the configured default and
-  // tracks the last applied resize. With multiple viewers the PTY has a
-  // single size — the most recent resize from any viewer wins.
-  let curCols = config.cols;
-  let curRows = config.rows;
-
-  // Apply a size to the guest PTY, but only when it actually changed —
-  // each resize spawns a one-shot exec in the VM, so dropping no-ops
-  // matters (the browser sends a resize on every connect).
-  const applySize = (cols: number, rows: number): void => {
-    const c = Math.max(1, Math.floor(cols));
-    const r = Math.max(1, Math.floor(rows));
-    if (c === curCols && r === curRows) return;
-    curCols = c;
-    curRows = r;
-    void shell.resize(c, r);
-  };
-
   // --- Browser -> host: resize -----------------------------------------
-  peer.onResize((msg, peerId) => {
-    if (stopped || !viewers.has(peerId) || !isResizeMessage(msg)) return;
-    applySize(msg.cols, msg.rows);
-  });
+  // The PTY size is fixed at boot; viewers scale their own rendering to fit.
+  // The handler stays registered for trystero action-set parity, but a
+  // resize from a viewer has no effect on the shared PTY.
+  peer.onResize(() => {});
 
   // --- Handshake: every valid peer becomes a viewer --------------------
   peer.onHello((msg, peerId) => {
@@ -131,15 +116,6 @@ export function runSession(
       log.warn(`Rejecting peer ${peerId}: protocol mismatch.`);
       peer.sendBye({ reason: "Incompatible protocol version." }, peerId);
       return;
-    }
-
-    // Size the guest PTY from the joiner's reported terminal size before
-    // sending `ready`, so the shell (and anything it launches) sees the
-    // real dimensions instead of the hardcoded default. A zero dimension
-    // means the browser had not laid out yet — it follows up with a
-    // `resize` once it has.
-    if (msg.cols > 0 && msg.rows > 0) {
-      applySize(msg.cols, msg.rows);
     }
 
     // Replay the scrollback *before* adding the peer to `viewers`. Sends on
@@ -155,8 +131,8 @@ export function runSession(
 
     const ready: ReadyMessage = {
       protocolVersion: PROTOCOL_VERSION,
-      cols: curCols,
-      rows: curRows,
+      cols: config.cols,
+      rows: config.rows,
       shell: config.shell,
       image: config.image,
     };
