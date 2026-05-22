@@ -10,7 +10,7 @@
 import { parseArgs } from "node:util";
 import { bootSandbox, teardownSandbox, type ShellSession } from "./sandbox.ts";
 import { createHostPeer, type HostPeer } from "./peer.ts";
-import { runSession } from "./session.ts";
+import { runSession, type RunningSession } from "./session.ts";
 import { makeRoomCode, makeShareUrl } from "./url.ts";
 import { color, log } from "./logger.ts";
 
@@ -118,6 +118,7 @@ async function main(): Promise<void> {
 
   let shell: ShellSession | undefined;
   let peer: HostPeer | undefined;
+  let session: RunningSession | undefined;
   let cleaningUp = false;
 
   // Idempotent, timeout-bounded teardown. The sandbox teardown and the P2P
@@ -139,6 +140,10 @@ async function main(): Promise<void> {
     // sandbox teardown is internally time-bounded; the P2P leave gets its
     // own budget. They run concurrently so neither can starve the other.
     if (peer) peer.sendBye({ reason: "The host stopped sharing." });
+
+    // Close the per-viewer tmux PTYs (owned by the session), then kill the
+    // tmux server and the VM.
+    if (session) await withTimeout(session.stop(), 4000);
 
     await Promise.all([
       shell ? teardownSandbox(shell) : Promise.resolve(),
@@ -170,7 +175,7 @@ async function main(): Promise<void> {
       log.info(`A browser joined the room (${peerId}). Awaiting handshake…`);
     });
 
-    const session = runSession(shell, peer, {
+    session = runSession(shell, peer, {
       cols: DEFAULT_COLS,
       rows: DEFAULT_ROWS,
       shell: opts.shell,
@@ -179,7 +184,7 @@ async function main(): Promise<void> {
 
     printSessionBanner(roomCode, shareUrl, opts.password !== undefined);
 
-    // Run until the PTY exits.
+    // Run until the shell exits.
     await session.done;
     await cleanup(0);
   } catch (err) {

@@ -134,20 +134,22 @@ on a UDP-capable host and point the endpoint hosts in `buildIceServers` at it.
 
 ## Known limitations
 
+- **Shared shell, per-viewer sizing.** Every browser that completes a valid
+  handshake joins the *same* shell — all viewers share control. The guest
+  runs a **tmux** session hosting the shell, and each viewer attaches through
+  its own tmux *grouped session*, so a laptop and a phone viewing the same
+  shell each render at their own terminal size. tmux is auto-installed in the
+  default alpine image at boot; a custom `--image` should ship tmux or have a
+  package manager (apk/apt/dnf/yum).
 - **Terminal resize.** microsandbox's SDK exposes no PTY winsize ioctl. The
   host works around this with a one-shot exec in the same VM that runs `stty`
-  on the guest PTY and sends `SIGWINCH` to the shell's process group, so
-  full-screen TUI apps (vim, htop, opencode) re-layout on resize. The browser
-  also reports its size in the join handshake, so the shell starts at the
-  right dimensions. Resize is delivered as a signal, not a true winsize
-  ioctl — a few apps that only read the size via `ioctl` may still need a
-  manual refresh.
+  on the viewer's tmux client tty and sends `SIGWINCH` to that client, so
+  tmux renegotiates the size and full-screen TUI apps (vim, htop, opencode)
+  re-layout on resize. The browser also reports its size in the join
+  handshake, so the shell starts at the right dimensions.
 - **NAT traversal.** WebRTC uses STUN by default — fine for most networks,
   but strict/symmetric NATs or corporate firewalls may fail to connect
   directly. Configure a **TURN relay** to cover those cases (see below).
-- **Shared shell.** Every browser that completes a valid handshake joins the
-  same shell. PTY output is broadcast to all viewers, and keystrokes from any
-  viewer go to the one underlying shell — all connected viewers share control.
 - **Security.** The room code is discoverable on the public Nostr signaling
   network. Anyone with the code (and password, if set) can use the shell — but
   it is a disposable microVM, not your host. Use `--password` for anything
